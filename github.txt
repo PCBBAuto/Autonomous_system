@@ -1,0 +1,7 @@
+email
+user: PCBBAuto
+password: SGAGRRAR
+
+github
+user: PCBBAuto
+password: Passivecleanerboat
