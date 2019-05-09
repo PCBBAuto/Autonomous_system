@@ -4,7 +4,6 @@
 #include "Emergency_State.h"
 #include "ads1115_rpi.c"
 
-
 //State Defines
 #define Init_State           69
 #define Start_State          0
@@ -19,8 +18,9 @@
 #define Dock_State           9
 
 //General Defines
-#define DELAY 400
+#define DELAY    400
 #define GoButton 23
+#define NO_ERROR  0 
 
 //OutBound State Defines
 #define Init_Outbound 		   0
@@ -60,7 +60,6 @@ int main(int argc, char **argv)
 	int Go = 0;
 	
 
-	
 /***********************************************************************
 *							Code Starts Here						   *
 ***********************************************************************/
@@ -69,9 +68,18 @@ switch(state){
 /***********************************************************************
 *							Init
 ***********************************************************************/
-case Init_State:
+case Init_State: {
 	//Run Error Check 
-	//**put function here
+	ErrorCode = 0b111111;
+	
+	int checkError;
+	checkError = ErrorCheck();
+	return checkError;
+		
+	if(ErrorCode != NO_ERROR){
+		state = Emergency_State;
+		break;
+		}
 		
 	//Get User Destination Coordinate Input
     printf("Hello. please input the destinations LATUTUDE.\r\n");
@@ -96,14 +104,14 @@ case Init_State:
 		printf("\e[1;1H\e[2J");
 
 	break;
+}
 /***********************************************************************
 *							Start						   
 ***********************************************************************/
-case Start_State:
+case Start_State: {
 
 	//Run Error Check
-	//**input function here**
-	
+
 	//Check Go button
 	Go = digitalRead(GoButton);
 	if(Go == 1){
@@ -113,6 +121,7 @@ case Start_State:
 	
 
 	break;
+}
 /***********************************************************************
 *							Outbound							   
 ***********************************************************************/
@@ -143,9 +152,11 @@ case Outbound_State:
 ***********************************************************************/
 case Emergency_State:
 	//Call Emergency Phase
-	state = Emergency(ErrorCode);
-
-	return 0;
+	Emergency(ErrorCode);
+	
+	//Restart Program
+	state = Init_State;
+	
 	break;
 /***********************************************************************
 *							Orientation A						   
