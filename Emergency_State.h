@@ -1,13 +1,15 @@
 #include <stdio.h>
 #include <wiringPi.h>
-#include "Error_Check.h"
 #include <stdlib.h>
 #include <stdbool.h>
-#include "header.h"
+#include "Error_Check.h"
 
 //General Defines
 #define PASS 1
 #define FAIL 0
+#define BEACONPIN 11
+#define ON   1
+#define OFF  0
 
 //Emergency State Defines
 #define PARSE_ERROR_STATE    0
@@ -36,11 +38,16 @@
 #define WATER_WPUMPON 3
 #define WATER_EXITSTATE 4 
 
-//for tilt error
+//Tilt Error Defines
 #define ROLL_LOW -3.0
 #define ROLL_HIGH 103.0
 #define PITCH_LOW -58.0
 #define PITCH_HIGH 59.0
+
+//Battery Error Defines
+
+//Prototype Functions
+void Beacon(int OnOff);
 
 
 int Emergency(int ErrorCode)
@@ -52,7 +59,8 @@ int Emergency(int ErrorCode)
 		}
 		
 	//Declare Variables, Emergency	
-	int state = PARSE_ERROR_STATE;	
+	int state = PARSE_ERROR_STATE;
+	int AnchorDeploy = 0;	
 	
 	//Water Error Variables and Pins 
 	pinMode(WATER_PUMP_PIN,OUTPUT);
@@ -67,143 +75,119 @@ switch(state){
 /***********************************************************************
 *							Parse Error 							   *
 ***********************************************************************/
-case PARSE_ERROR_STATE:
-
+case PARSE_ERROR_STATE: 
+	printf("EMERGENCY STATE\r\n");
+	
 	//Check for No Error
 	if(ErrorCode == NO_ERROR_CODE){
-		printf("No Error Detected \n");				
+		printf("No Error Detected \r\n");
+		//Turn Off Beacon
+		if (AnchorDeploy!=0){
+			//ANCHORDOWN(6);//BRINGS THE ANCHOR BACK UP
+		}
+		Beacon(OFF);				
 		return 0;
 		
 		}
 	//Check for Battery Error	
 	else if((ErrorCode & BATTERY_ERROR_CODE) == BATTERY_ERROR_CODE){
-		printf("Battery Error Detected");		
+		printf("Battery Error Detected\r\n");	
+		printf("Entering Battery State\r\n");		
 		state = BATTERY_ERROR_STATE;
 		break;
 		
 		}
 	//Check for Water Error	
 	else if((ErrorCode & WATER_ERROR_CODE) == WATER_ERROR_CODE){
-		printf("Water Error Detected");		
+		printf("Water Error Detected\r\n");	
+		printf("Entering Water State\r\n");		
 		state = WATER_ERROR_STATE;
 		break;
 		
 		}
 	//Check for Humidity Error	
 	else if((ErrorCode & HUMIDITY_ERROR_CODE) == HUMIDITY_ERROR_CODE){
-		printf("Humidity Error Detected");		
+		printf("Humidity Error Detected\r\n");			
+		printf("Entering Humidity State\r\n");		
 		state = HUMIDITY_ERROR_STATE;
 		break;
 		
 		}
 	//Check for Tilt Error	
 	else if((ErrorCode & TILT_ERROR_CODE) == TILT_ERROR_CODE){
-		printf("Tilt Error Detected");		
+		printf("Tilt Error Detected\r\n");
+		printf("Entering Tilt State\r\n");		
 		state = TILT_ERROR_STATE;
 		break;
 		
 		}
 	//Check for Gyro Error	
 	else if((ErrorCode & GYRO_ERROR_CODE) == GYRO_ERROR_CODE){
-		printf("Gyro Error Detected");		
+		printf("Gyro Error Detected\r\n");			
+		printf("Entering Gyro State\r\n");		
 		state = GYRO_ERROR_STATE;
 		break;
 		
 		}
 	//Check for GPS Error	
 	else if((ErrorCode & GPS_ERROR_CODE) == GPS_ERROR_CODE){
-		printf("GPS Error Detected");		
+		printf("GPS Error Detected\r\n");		
 		state = GPS_ERROR_STATE;
 		break;
 		
 		}
-
 	break;
 /***********************************************************************
 *							Humidity Error 							   *
 ***********************************************************************/
 case HUMIDITY_ERROR_STATE:
-	//Insert Error Actions
-
+	//Turn On Beacon
+	Beacon(ON);
+	//serves as a check for the water pump sensor
+	//does not activate anything on its own
 	
-
 	break;
 /***********************************************************************
-*							Battery Error								   *
+*							Battery Error							   *
 ***********************************************************************/
 case BATTERY_ERROR_STATE:
-	//Insert Error Actions
+	//Turn On Beacon
+	Beacon(ON);
+	//AnchorDOWN(6);
+	state = ERROR_CHECK;
 
 
 	break;
 /***********************************************************************
-*							Tilt Error							   *
+*							Tilt Error							       *
 ***********************************************************************/
 case TILT_ERROR_STATE:
-
-//When Tilt error is detected the beacon will turn on(PIN 11)
-
-bool isBoatTilted() {	
-	Gyro checkGyro = magnetometer(); 
-	bool rollInBounds = false;
-	bool pitchInBounds = false;
-	
-	//if the roll is between range, then boat passes test
-	if(checkGyro.rollValue>= ROLL_LOW && checkGyro.rollValue<= ROLL_HIGH) {
-		rollInBounds = true;
-		printf("Roll of Boat passes");
-	}else {
-//beacon turns on
-//goes into emergency phase 
-//pinMode (BEACON_PIN,OUTPUT);
-//digitalWrite(BEACON_PIN,HIGH);
-
-		printf("Roll of Boat did not pass");
-	}
-				
-//if the pitch is between range, then boat passes test
-	if(checkGyro.pitchValue>= PITCH_LOW && checkGyro.pitchValue<= PITCH_HIGH) {
-		pitchInBounds = true;
-		printf("Pitch of boat passes");
-	}else {  
-//beacon turns on
-//pinMode (BEACON_PIN,OUTPUT);
-//digitalWrite(BEACON_PIN,HIGH);
-
-		printf("Pitch of Boat did not passes");
-	}
-	return (rollInBounds && pitchInBounds); 
-}
+	//Turn On Beacon
+	Beacon(ON);
+	state = ERROR_CHECK;
 
 
 
 	break;
 /***********************************************************************
-*							Mag Error 							   *
+*							Mag Error 							   
 ***********************************************************************/
 case GYRO_ERROR_STATE:
+	//Turn On Beacon
+	Beacon(ON);
+	state = ERROR_CHECK;
 
-//when mag error is detected then the beacon will turn on (PIN 11)
-bool magError(){
-	bool IMU_on = detectIMU();
-	if(IMU_on) {
-		printf("Magnetometer is connected");
-	} else{
-		printf("Magnetometer is not connected.Beacon on.");
-		return false;
-//turn beacon on 
-//pinMode (BEACON_PIN,OUTPUT);
-//digitalWrite(BEACON_PIN,HIGH);
-	}
-}
+
+
 
 	break;
 /***********************************************************************
-*							Water Error Code								   *
+							Water Error Code								  
 ***********************************************************************/
 case WATER_ERROR_STATE:
+	//Turn On Beacon
+	Beacon(ON);
 	
-	//When water sensor is activated(water threshold in boat met) the water pump will turn on
 	//main code
 		switch(waterState){
 			case WATER_INIT:
@@ -212,11 +196,11 @@ case WATER_ERROR_STATE:
 			
 			case WATER_CHECK:
 				//Run Error Check
-				ErrorCode = 0b111111; //replace with error check
+				ErrorCode = ErrorCheck();
 				
 				//Check for Battery Error
 				if((ErrorCode & BATTERY_ERROR_CODE) == BATTERY_ERROR_CODE){
-				printf("Battery Error Detected");		
+				printf("Battery Error Detected\r\n");		
 				state = BATTERY_ERROR_STATE;
 				waterState = WATER_INIT;
 				break;
@@ -224,7 +208,7 @@ case WATER_ERROR_STATE:
 				
 				//Check for Water Error	
 			    if((ErrorCode & WATER_ERROR_CODE) == WATER_ERROR_CODE){
-				printf("Water Error Confirmed");		
+				printf("Water Error Confirmed\r\n");		
 				waterState = WATER_WPUMPON;
 				break;
 				}
@@ -252,25 +236,38 @@ case WATER_ERROR_STATE:
 
 	break;
 /***********************************************************************
-*							GPS Error Code								   *
+*							GPS Error Code						       *
 ***********************************************************************/
 case GPS_ERROR_STATE:
 	//Insert Error Actions
+	
 	break;
-	
-	
+
 
 /***********************************************************************
 *							Error Check								   *
 ***********************************************************************/
 case ERROR_CHECK:
 	//Run Error Check
-	ErrorCode = 0b111111; //replace with error check
+	printf("Emergency Error Check State\r\n");
+	ErrorCode = ErrorCheck();
 	state = PARSE_ERROR_STATE;	
 	break;
 	
-}	
+
+}
 }
 }
 
 
+
+
+
+/***********************************************************************
+*							Beacon On/Off								   *
+***********************************************************************/
+void Beacon(int OnOff){
+	
+	pinMode(BEACONPIN, OUTPUT);
+	digitalWrite(BEACONPIN, OnOff);
+	}
