@@ -4,6 +4,8 @@
 #include "Emergency_State.h"
 #include "ads1115_rpi.c"
 #include "Speed_Control.h"
+#include "Yaw_Control.h"
+
 
 //State Defines
 #define Init_State           69
@@ -17,9 +19,10 @@
 #define OrientationB_State   7
 #define Return_State         8
 #define Dock_State           9
+#define Test_State           666
 
 //General Defines
-#define DELAY    400
+#define DELAY    420
 #define GoButton 23
 #define NO_ERROR 0 
 #define ON       1
@@ -36,7 +39,18 @@
 #define Init_Outbound 		   0
 #define IncSpeed_Outbound 	   1
 #define CourseCalc_Outbound    2
-#define CourseCorrect_Outbound 3
+#define CourseCheck_Outbound   3
+
+//Collection Defines
+#define GPS_Coordinate_Files "GPS_Coordinate_Files.txt"
+#define INIT_COLLECTION 0
+#define CHECK_ERROR_COLLECTION 1
+#define COLLECTION 3
+#define NextSTATE 4
+#define COLLECTION_TIME 120000 //2 min collection time
+
+//Declare Function Prototypes
+int PositionError(float LAT1,float LON1, float LAT2, float LON2);
 
 //Declare Structs
 struct Coordinates {
@@ -69,19 +83,34 @@ int main(int argc, char **argv)
 	
 	//Declare Initial States	
 	int state = Init_State;
+	state = Test_State;
 	int State_OutB = Init_Outbound;
 	
 	//Declare Variables
 	int ErrorCode = 0b000000;	
 	int Confirmation = 0;
 	int Go = 0;
-	int i;
+	int i = 0;
+	int newBearing = 0;
+	int lastState = 0;
 	trolly.currentSpeed = 0;
 	trolly.desiredSpeed = 0;
 	
+	//Declar Collection Variables
+	float NewGPSdataLAT=0;
+	float NewGPSdataLON=0;
+	float OldGPSdataLAT=0;
+	float OldGPSdataLON=0;
+	int collectionTimerStart = 0;
+	int collectionTimerEnd = 0;
+	int deltaCollection = 0;
+	int collection_state = INIT_COLLECTION;
+	FILE *file_ptr;
+	
+	
 	//Initialize Sensors
 	for(i=0; i<=2;i++) {
-		ErrorCheck();
+		//ErrorCheck();
 		printf("\e[1;1H\e[2J");
 	}
 
@@ -97,6 +126,7 @@ case Init_State: {
 	//Get Error Code
 	ErrorCode = ErrorCheck();
 	if(ErrorCode != NO_ERROR){
+		lastState = state; 
 		state = Emergency_State;
 		printf("Entering Emergency State \r\n");
 		break;
@@ -134,6 +164,7 @@ case Start_State: {
 	//Run Error Check
 	ErrorCode = ErrorCheck();
 	if(ErrorCode != NO_ERROR){
+		lastState = state;
 		state = Emergency_State;
 		printf("Entering Emergency State \r\n");
 		break;
@@ -150,7 +181,7 @@ case Start_State: {
 	break;
 }
 /***********************************************************************
-*							Outbound							   
+*							Outbound							   	
 ***********************************************************************/
 case Outbound_State:
 
@@ -159,6 +190,7 @@ case Outbound_State:
 		//Get Error Code
 		ErrorCode = ErrorCheck();
 		if(ErrorCode != NO_ERROR){
+			lastState = state;
 			state = Emergency_State;
 			printf("Entering Emergency State \r\n");
 			break;
@@ -169,18 +201,19 @@ case Outbound_State:
 		trolly.desiredSpeed = MAXSPEED;
 		break;
 		
-		case IncSpeed_Outbound:
+		case IncSpeed_Outbound:		
 		//Increase speed to 3
 		DesireSpeed(trolly.currentSpeed, trolly.desiredSpeed);		
 		break;
 		
 		case CourseCalc_Outbound:
-		
+		newBearing = courseCalc(coordinates.DestinationLat, coordinates.DestinationLong);
+		YawControl(newBearing);
 		break;
 		
-		case CourseCorrect_Outbound:
-		break;
-	
+		case CourseCheck_Outbound:
+		//Compare current location to destination location
+		break;		
 		}
 	
 
@@ -194,7 +227,7 @@ case Emergency_State:
 	
 	
 	//Restart Program
-	state = Init_State;
+	state = lastState;
 	
 	break;
 /***********************************************************************
@@ -216,8 +249,63 @@ case AnchorDrop_State:
 *							Collection						   
 ***********************************************************************/
 case Collection_State:
+	
+		//Main state
+		switch(collection_state){
+			
+			case INIT_COLLECTION:
+				//Start Timer
+				collectionTimerStart = millis();				
+				collection_state = CHECK_ERROR_COLLECTION;
+				break;
+				
+			case CHECK_ERROR_COLLECTION:
+				
+				//Error Check
+				ErrorCode = ErrorCheck();
+				if(ErrorCode != 0){
+					lastState = state;
+					state = Emergency_State;
+					printf("Entering Emergency State \r\n");
+					break;
+				}
+				
+				//Transition states
+				collection_state = COLLECTION;
+				break;
+			
+			case COLLECTION:
+				
+				//Get GPS Datat
+				getGPS(&NewGPSdataLAT, &NewGPSdataLON, &Error);
+				
+				//Get New Time
+				collectionTimerEnd = millis();
+				
+				//Update GPS File
+				if(PositionError(NewGPSdataLAT,NewGPSdataLON,OldGPSdataLAT,OldGPSdataLON) == 0){
+					collection_state = INIT_COLLECTION;
+				
+				}else{
+						printf("Latitde: %lf Longitude %lf\r\n",NewGPSdataLAT,NewGPSdataLON);
+						file_ptr = fopen(GPS_Coordinate_Files, "a");
+						fprintf(file_ptr,"Latitde: %f Longitude %f \r\n",NewGPSdataLAT,NewGPSdataLON);
+						fclose(file_ptr);
+						OldGPSdataLAT = NewGPSdataLAT;
+						OldGPSdataLON = NewGPSdataLON;
+						collection_state = INIT_COLLECTION;
+						}
+						
+				//Check if Collection Time is Over
+				deltaCollection = collectionTimerEnd - collectionTimerStart;
+				if(deltaCollection >= COLLECTION_TIME){
+					state = AnchorRetrieve_State;
+					collection_state = INIT_COLLECTION;
+					
+					} 		
+				break;		
+		}
 
-	return 0;
 	break;
 /***********************************************************************
 *							Anchor Retrieve								   
@@ -251,6 +339,17 @@ case Dock_State:
 
 	return 0;
 	break;
+	
+/***********************************************************************
+*							Test								   
+***********************************************************************/
+case Test_State:
+	
+	printf("Heading = %d\r\n", getHeading());
+	delay(500);                       
+
+
+	break;
 /***********************************************************************
 *							End Code								   
 ***********************************************************************/	
@@ -261,3 +360,22 @@ case Dock_State:
 
 
 
+/***********************************************************************
+*							Helper Function							   
+***********************************************************************/
+
+/***********************************************************************
+*							position Error								   
+***********************************************************************/
+int PositionError(float LAT1,float LON1, float LAT2, float LON2){
+	if(((LAT2-LAT1)<.0001)   && 
+      ((LAT1-LAT2)<.0001)    &&
+	  ((LON2-LON1)<.0001)  &&
+	  ((LON1-LON2)<.0001)){
+		  printf("0 \n");
+		  return 0;
+	  }else {
+		  printf("1 \n");
+		  return 1;
+	  }
+}
