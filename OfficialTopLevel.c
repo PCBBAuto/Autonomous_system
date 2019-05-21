@@ -3,6 +3,7 @@
 #include <wiringPi.h>
 #include "Emergency_State.h"
 #include "ads1115_rpi.c"
+#include "Speed_Control.h"
 
 //State Defines
 #define Init_State           69
@@ -20,11 +21,20 @@
 //General Defines
 #define DELAY    400
 #define GoButton 23
-#define NO_ERROR  0 
+#define NO_ERROR 0 
+#define ON       1
+#define OFF      0
+#define BEACONPIN 11
+
+//Speed Control
+#define MAXSPEED 3
+#define STOP     0
+#define SPEED1   1
+#define SPEED2   2
 
 //OutBound State Defines
 #define Init_Outbound 		   0
-#define Speed2_Outbound 	   1
+#define IncSpeed_Outbound 	   1
 #define CourseCalc_Outbound    2
 #define CourseCorrect_Outbound 3
 
@@ -38,6 +48,11 @@ struct Coordinates {
 	float CorrectLat;
 } coordinates; 
 
+struct Trolly {
+	int currentSpeed;
+	int desiredSpeed;
+} trolly; 
+
 
 int main(int argc, char **argv)
 {
@@ -49,16 +64,26 @@ int main(int argc, char **argv)
 	
 	//Initialize Pins
 	pinMode(GoButton, INPUT);
+	pinMode(BEACONPIN, OUTPUT);
+	digitalWrite(BEACONPIN, OFF);
 	
 	//Declare Initial States	
 	int state = Init_State;
 	int State_OutB = Init_Outbound;
 	
 	//Declare Variables
-	int ErrorCode = 0;	
+	int ErrorCode = 0b000000;	
 	int Confirmation = 0;
 	int Go = 0;
+	int i;
+	trolly.currentSpeed = 0;
+	trolly.desiredSpeed = 0;
 	
+	//Initialize Sensors
+	for(i=0; i<=2;i++) {
+		ErrorCheck();
+		printf("\e[1;1H\e[2J");
+	}
 
 /***********************************************************************
 *							Code Starts Here						   *
@@ -69,17 +94,13 @@ switch(state){
 *							Init
 ***********************************************************************/
 case Init_State: {
-	//Run Error Check 
-	ErrorCode = 0b111111;
-	
-	int checkError;
-	checkError = ErrorCheck();
-	return checkError;
-		
+	//Get Error Code
+	ErrorCode = ErrorCheck();
 	if(ErrorCode != NO_ERROR){
 		state = Emergency_State;
+		printf("Entering Emergency State \r\n");
 		break;
-		}
+	}
 		
 	//Get User Destination Coordinate Input
     printf("Hello. please input the destinations LATUTUDE.\r\n");
@@ -111,6 +132,12 @@ case Init_State: {
 case Start_State: {
 
 	//Run Error Check
+	ErrorCode = ErrorCheck();
+	if(ErrorCode != NO_ERROR){
+		state = Emergency_State;
+		printf("Entering Emergency State \r\n");
+		break;
+	}
 
 	//Check Go button
 	Go = digitalRead(GoButton);
@@ -127,24 +154,35 @@ case Start_State: {
 ***********************************************************************/
 case Outbound_State:
 
-	while(1){
 	switch(State_OutB){
 		case Init_Outbound:
-		//Run Error Check
+		//Get Error Code
+		ErrorCode = ErrorCheck();
+		if(ErrorCode != NO_ERROR){
+			state = Emergency_State;
+			printf("Entering Emergency State \r\n");
+			break;
+		}
 		
+		//Transition to IncSpeed
+		State_OutB = IncSpeed_Outbound;
+		trolly.desiredSpeed = MAXSPEED;
 		break;
 		
-		case Speed2_Outbound:
+		case IncSpeed_Outbound:
+		//Increase speed to 3
+		DesireSpeed(trolly.currentSpeed, trolly.desiredSpeed);		
 		break;
 		
 		case CourseCalc_Outbound:
+		
 		break;
 		
 		case CourseCorrect_Outbound:
 		break;
 	
 		}
-	}
+	
 
 	break;
 /***********************************************************************
@@ -153,6 +191,7 @@ case Outbound_State:
 case Emergency_State:
 	//Call Emergency Phase
 	Emergency(ErrorCode);
+	
 	
 	//Restart Program
 	state = Init_State;
@@ -219,5 +258,6 @@ case Dock_State:
 }
 }
 }
+
 
 
